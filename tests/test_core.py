@@ -21,18 +21,18 @@ class DockerDriverTest(unittest.TestCase):
         self.__driver = DockerDriver(container_id)
 
     def test_get_layers(self):
-        layers = self.__driver.get_layers()
-        assert(len(layers)>0)
-        for l in layers:
-            assert(l!="")
+        layer_id = self.__driver.get_topmost_layer_id()
+        assert(layer_id != "")
 
     def test_get_topmost_layer_path(self):
         path = self.__driver.get_topmost_layer_path()
         assert("-init" not in path)
 
     def test_create_topmost_layer_archive(self):
-        self.__driver.create_topmost_layer_archive(DockerDriverTest.TAR_NAME)
+        success = self.__driver.create_topmost_layer_archive(DockerDriverTest.TAR_NAME)
+        assert(success)
 
     def test_deploy_topmost_layer_archive(self):
         popen("echo Synthetic > /tmp/file1.txt && tar rf "+DockerDriverTest.TAR_NAME+" -C / tmp/file1.txt")
-        self.__driver.deploy_topmost_layer_archive(DockerDriverTest.TAR_NAME)
+        success = self.__driver.deploy_topmost_layer_archive(DockerDriverTest.TAR_NAME)
+        assert(success)

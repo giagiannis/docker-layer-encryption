@@ -1,0 +1,48 @@
+#!/usr/bin/python
+
+import argparse
+from sys import argv
+
+class ArgumentParser:
+    """
+    Parses the arguments for the various commands
+    """
+    BADREQUEST = -1
+    def __init__(self, argv):
+        self.__argv=argv
+
+    def parse_encryption_arguments(self):
+        """
+        Parsing argument for the encryption arguments
+        """
+        outfile = self.__parse_safe("-o")
+        container_id = self.__parse_safe("-c")
+        if ArgumentParser.BADREQUEST in [outfile,container_id]:
+            return ArgumentParser.BADREQUEST
+        else:
+            return outfile,container_id
+
+    def __parse_safe(self, value):
+        try:
+            index = self.__argv.index(value)
+        except:
+            return ArgumentParser.BADREQUEST
+
+
+if __name__ == "__main__":
+    parser = ArgumentParser(argv)
+    commands = ["encrypt", "decrypt", "verify"]
+    if (len(argv)<2):
+        print("Please provide one command of: %s" % commands)
+        exit(0)
+    if argv[1] == "encrypt":
+        result = parser.parse_encryption_arguments()
+        if(result==ArgumentParser.BADREQUEST):
+            print "Please specify the container_id (-c) and the outfile (-o)"
+            exit(1)
+    elif argv[1] == "decrypt":
+        pass
+    elif argv[1] == "verify":
+        pass
+    else:
+        print "The first argument should be one of encrypt, decrypt, verify" 

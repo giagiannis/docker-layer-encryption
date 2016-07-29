@@ -8,8 +8,14 @@ from idle.client import IDLEClient
 class IDLEClientTest(unittest.TestCase):
     def setUp(self):
         self.__container_id = popen("docker ps --all | tail  -n 1  | awk '{print $1}'").read().rstrip()
+    
+    def tearDown(self):
+        pass
 
     def test_export_layer(self):
         client = IDLEClient(self.__container_id)
         key = SigningKey.generate()
-        output = client.export_layer(random_hex_string(), key.to_string())
+        passphrase = random_hex_string()
+        verification_key = key.get_verifying_key().to_string()
+        output = client.export_layer(passphrase, key.to_string())
+        client.install_layer(output, passphrase, verification_key)

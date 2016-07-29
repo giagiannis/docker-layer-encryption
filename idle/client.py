@@ -4,7 +4,7 @@ __all__ = ['IDLEClient']
 
 from idle.core import DockerDriver, EncryptionDriver
 import random
-from os import system,remove
+from os import system,remove,popen
 
 class IDLEClient:
     """
@@ -15,9 +15,8 @@ class IDLEClient:
 
     def export_layer(self, passphrase, sign_key, outfile = None):
         """
-        Method used to export the layer containing the confiential data.
-        The exported file contains the encrypted data, along with its signature and
-        the public key file.
+        Method used to export the layer containing the confidential data.
+        The exported file contains the encrypted data, along with its signature.
         """
         docker = DockerDriver(self.__container_id)
         layer_tar = self.__create_random_path()
@@ -29,11 +28,31 @@ class IDLEClient:
         output = self.__create_signed_archive(encrypted, signature)
         return output
 
-    def install_layer(self):
+    def install_layer(self, archive_path, passphrase, verification_key):
         """
-        Method used to install 
+        Method used to install an encrypted archive into the specified docker container.
         """
-        pass
+        signature, data_path = self.__extract_signed_archive(archive_path)
+        encryption_client = EncryptionDriver(data_path)
+        if(verification_key is not None):
+            v=self.verify_layer(archive_path, verification_key)
+            if v==False:
+                return False
+        raw_data = self.__create_random_path()
+        encryption_client.decrypt(passphrase, raw_data)
+        docker_driver = DockerDriver(self.__container_id)
+        docker_driver.deploy_topmost_layer_archive(raw_data)
+        return True
+
+    def verify_layer(self, archive_path, verification_key):
+        """
+        Method used to verify the integrity of the provided layer. Internally 
+        used by the install_layer method, if a verification key is provided
+        """
+        signature,data_path = self.__extract_signed_archive(archive_path)
+        encryption_client = EncryptionDriver(data_path)
+        return encryption_client.verify(verification_key, signature)
+
 
     def __create_random_path(self, suffix="temp"):
         """
@@ -56,3 +75,23 @@ class IDLEClient:
         system("tar cfj "+output+" -C "+temp_workspace+" .")
         system("rm -r "+temp_workspace)
         return output
+
+    def __extract_signed_archive(self, archive_path, remove_archive=False):
+        """
+        Method used to extract the signed archive. The original archive is removed.
+        """
+        system("cp "+archive_path+" "+archive_path+"-old")
+        temp_workspace = self.__create_random_path()
+        system("mkdir " + temp_workspace)
+        system("tar xfa "+archive_path+" -C "+temp_workspace)
+        signature = file(temp_workspace+"/signature").read().rstrip()
+        data_path = popen("ls "+temp_workspace+"/*.enc").read().rstrip()
+        if not remove_archive:
+            system("cp "+archive_path+"-old "+archive_path)
+        else:
+            system("rm "+archive_path+"-old")
+
+        return signature,data_path
+
+
+

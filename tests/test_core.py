@@ -7,6 +7,7 @@ from idle.core import EncryptionManager
 
 
 class DockerDriverTest(unittest.TestCase):
+    
     @classmethod
     def setUpClass(cls):
         DockerDriverTest.TAR_NAME=''.join([random.choice("0123456789abdef") for _ in range(10)])+".tar"
@@ -35,4 +36,30 @@ class DockerDriverTest(unittest.TestCase):
     def test_deploy_topmost_layer_archive(self):
         popen("echo Synthetic > /tmp/file1.txt && tar rf "+DockerDriverTest.TAR_NAME+" -C / tmp/file1.txt")
         success = self.__driver.deploy_topmost_layer_archive(DockerDriverTest.TAR_NAME)
+        system("rm /tmp/file1.txt")
         assert(success)
+
+class EncryptionManagerTest(unittest.TestCase):
+
+    @classmethod
+    def setUpClass(cls):
+        EncryptionManagerTest.passphrase  = ''.join([random.choice("0123456789abdef") for _ in range(16)]) 
+        EncryptionManagerTest.raw_file = "/tmp/tobeencrypted.txt"
+        EncryptionManagerTest.enc_file = "/tmp/encrypted.txt"
+        EncryptionManagerTest.contents = ''.join([random.choice("0123456789abdef") for _ in range(161)]) 
+        file(EncryptionManagerTest.raw_file, 'w').write(EncryptionManagerTest.contents)
+
+    @classmethod
+    def tearDownClass(cls):
+        system("rm "+EncryptionManagerTest.raw_file)
+        system("rm "+EncryptionManagerTest.enc_file)
+
+    def test_encrypt_decrypt(self):
+        driver = EncryptionManager(EncryptionManagerTest.raw_file)
+        cipher_file = driver.encrypt(EncryptionManagerTest.passphrase, EncryptionManagerTest.enc_file)
+
+        driver = EncryptionManager(cipher_file)
+        raw_file = driver.decrypt(EncryptionManagerTest.passphrase, EncryptionManagerTest.raw_file)
+
+        assert(file(raw_file).read()==EncryptionManagerTest.contents)
+

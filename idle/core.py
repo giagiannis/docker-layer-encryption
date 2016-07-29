@@ -3,13 +3,15 @@ __all__ = ['DockerDriver', 'EncryptionManager', 'AtRestEncryptionManager']
 
 from os import popen
 from Crypto.Cipher import AES
+from base64 import b64encode, b64decode
+import random
 
 class DockerDriver:
     """
     Class used to interact with Docker
     """
     DOCKER_INSTALLATION_PATH="/var/lib/docker/"
-    DOCKER_STORAGE_BACKEND="overlay"   # only work for AUFS for now
+    DOCKER_STORAGE_BACKEND="overlay"   # only work for overlayfs for now
     def __init__(self, container_id):
         """
         Default constructor
@@ -49,19 +51,44 @@ class EncryptionManager:
     """
     Class used to perform the encryption, decryption and verification functions
     """
-    def __init__(self):
+    def __init__(self, input_file):
         """
         Default constructor
         """
-        pass
+        self.__input = input_file
 
-    def encrypt(self):
-        pass
+    def encrypt(self, passphrase, output=None):
+        """
+        Function used to encrypt the input file. Returns the file containing the ciphertext to the user.
+        """
+        obj = AES.new(passphrase, AES.MODE_CBC, b'0123456789abcdef')
+        file_cont = file(self.__input).read()
+        bytes_to_pad = 16 - len(file_cont) % 16
+        file_cont += bytes_to_pad*chr(bytes_to_pad)
+        ciphertext = obj.encrypt(file_cont)
 
-    def decrypt(self):
-        pass
+        if output is None:
+            output  = '/tmp/'+''.join([random.choice("0123456789abdef") for _ in range(16)])
+        file(output, 'w').write(b64encode(ciphertext))
+        return output
 
-    def sign(self):
+    def decrypt(self, passphrase, output=None):
+        """
+        Function used to decrypt the file containing the ciphertext. Returns the raw file path to the user
+        """
+        obj = AES.new(passphrase, AES.MODE_CBC, b'0123456789abcdef')
+        file_cont = file(self.__input).read()
+        file_cont = b64decode(file_cont)
+        file_cont= obj.decrypt(file_cont)
+
+        bytes_padded = ord(file_cont[len(file_cont)-1])
+        file_cont = file_cont[:-bytes_padded]
+        if output is None:
+            output  = '/tmp/'+''.join([random.choice("0123456789abdef") for _ in range(16)])
+        file(output, 'w').write(file_cont)
+        return output
+
+    def sign(self, private_key):
         pass
 
     def verify(self):

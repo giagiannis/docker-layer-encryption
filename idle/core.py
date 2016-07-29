@@ -1,9 +1,10 @@
 #!/usr/bin/python
-__all__ = ['DockerDriver', 'EncryptionManager', 'AtRestEncryptionManager']
+__all__ = ['DockerDriver', 'EncryptionDriver', 'AtRestEncryptionDriver']
 
 from os import popen
 from Crypto.Cipher import AES
 from base64 import b64encode, b64decode
+from ecdsa import SigningKey,VerifyingKey
 import random
 
 class DockerDriver:
@@ -47,7 +48,7 @@ class DockerDriver:
         return foo==""
 
 
-class EncryptionManager:
+class EncryptionDriver:
     """
     Class used to perform the encryption, decryption and verification functions
     """
@@ -88,14 +89,24 @@ class EncryptionManager:
         file(output, 'w').write(file_cont)
         return output
 
-    def sign(self, private_key):
-        pass
+    def sign(self, sign_key):
+        key = SigningKey.from_string(sign_key)
+        message = file(self.__input).read()
+        sig = key.sign(message)
+        return b64encode(sig)
 
-    def verify(self):
-        pass
+    def verify(self, verification_key, signature):
+        signature = b64decode(signature)
+        key = VerifyingKey.from_string(verification_key)
+        message = file(self.__input).read()
+        try:
+            key.verify(signature, message)
+            return True
+        except:
+            return False
 
 
-class AtRestEncryptionManager:
+class AtRestEncryptionDriver:
     """
     Class used to execute the data-at-rest encryption, using ecryptfs
     """

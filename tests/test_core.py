@@ -3,7 +3,8 @@ import unittest
 import random
 from os import system,popen
 from idle.core import DockerDriver
-from idle.core import EncryptionManager
+from idle.core import EncryptionDriver
+from ecdsa import SigningKey, VerifyingKey
 
 
 class DockerDriverTest(unittest.TestCase):
@@ -39,27 +40,31 @@ class DockerDriverTest(unittest.TestCase):
         system("rm /tmp/file1.txt")
         assert(success)
 
-class EncryptionManagerTest(unittest.TestCase):
+class EncryptionDriverTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        EncryptionManagerTest.passphrase  = ''.join([random.choice("0123456789abdef") for _ in range(16)]) 
-        EncryptionManagerTest.raw_file = "/tmp/tobeencrypted.txt"
-        EncryptionManagerTest.enc_file = "/tmp/encrypted.txt"
-        EncryptionManagerTest.contents = ''.join([random.choice("0123456789abdef") for _ in range(161)]) 
-        file(EncryptionManagerTest.raw_file, 'w').write(EncryptionManagerTest.contents)
+        EncryptionDriverTest.passphrase  = ''.join([random.choice("0123456789abdef") for _ in range(16)]) 
+        EncryptionDriverTest.raw_file = "/tmp/tobeencrypted.txt"
+        EncryptionDriverTest.enc_file = "/tmp/encrypted.txt"
+        EncryptionDriverTest.contents = ''.join([random.choice("0123456789abdef") for _ in range(161)]) 
+        file(EncryptionDriverTest.raw_file, 'w').write(EncryptionDriverTest.contents)
 
     @classmethod
     def tearDownClass(cls):
-        system("rm "+EncryptionManagerTest.raw_file)
-        system("rm "+EncryptionManagerTest.enc_file)
+        system("rm "+EncryptionDriverTest.raw_file)
+        system("rm "+EncryptionDriverTest.enc_file)
 
     def test_encrypt_decrypt(self):
-        driver = EncryptionManager(EncryptionManagerTest.raw_file)
-        cipher_file = driver.encrypt(EncryptionManagerTest.passphrase, EncryptionManagerTest.enc_file)
+        driver = EncryptionDriver(EncryptionDriverTest.raw_file)
+        cipher_file = driver.encrypt(EncryptionDriverTest.passphrase, EncryptionDriverTest.enc_file)
+        driver = EncryptionDriver(cipher_file)
+        raw_file = driver.decrypt(EncryptionDriverTest.passphrase, EncryptionDriverTest.raw_file)
+        assert(file(raw_file).read()==EncryptionDriverTest.contents)
 
-        driver = EncryptionManager(cipher_file)
-        raw_file = driver.decrypt(EncryptionManagerTest.passphrase, EncryptionManagerTest.raw_file)
-
-        assert(file(raw_file).read()==EncryptionManagerTest.contents)
-
+    def test_sign_verify(self):
+        sign_key = SigningKey.generate()
+        driver = EncryptionDriver(EncryptionDriverTest.raw_file)
+        signature = driver.sign(sign_key.to_string())
+        verification_key = sign_key.get_verifying_key()
+        assert(driver.verify(verification_key.to_string(), signature))

@@ -18,4 +18,4 @@ class IDLEClientTest(unittest.TestCase):
         passphrase = random_hex_string()
         verification_key = key.get_verifying_key().to_string()
         output = client.export_layer(passphrase, key.to_string())
-        client.install_layer(output, passphrase, verification_key)
+        assert(client.install_layer(output, passphrase, verification_key))

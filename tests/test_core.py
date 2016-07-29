@@ -5,13 +5,13 @@ from os import system,popen
 from idle.core import DockerDriver
 from idle.core import EncryptionDriver
 from ecdsa import SigningKey, VerifyingKey
+from .utils import random_hex_string
 
 
 class DockerDriverTest(unittest.TestCase):
-    
     @classmethod
     def setUpClass(cls):
-        DockerDriverTest.TAR_NAME=''.join([random.choice("0123456789abdef") for _ in range(10)])+".tar"
+        DockerDriverTest.TAR_NAME=random_hex_string()
         DockerDriverTest.TAR_NAME="/tmp/"+DockerDriverTest.TAR_NAME
 
     @classmethod
@@ -41,13 +41,12 @@ class DockerDriverTest(unittest.TestCase):
         assert(success)
 
 class EncryptionDriverTest(unittest.TestCase):
-
     @classmethod
     def setUpClass(cls):
-        EncryptionDriverTest.passphrase  = ''.join([random.choice("0123456789abdef") for _ in range(16)]) 
+        EncryptionDriverTest.passphrase  = random_hex_string() 
         EncryptionDriverTest.raw_file = "/tmp/tobeencrypted.txt"
         EncryptionDriverTest.enc_file = "/tmp/encrypted.txt"
-        EncryptionDriverTest.contents = ''.join([random.choice("0123456789abdef") for _ in range(161)]) 
+        EncryptionDriverTest.contents =  random_hex_string(161)
         file(EncryptionDriverTest.raw_file, 'w').write(EncryptionDriverTest.contents)
 
     @classmethod

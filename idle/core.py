@@ -34,12 +34,10 @@ class DockerDriver:
         """
         return DockerDriver.DOCKER_INSTALLATION_PATH+DockerDriver.DOCKER_STORAGE_BACKEND+"/"+self.get_topmost_layer_id()+"/upper/"
 
-    def create_topmost_layer_archive(self, output=None):
+    def create_topmost_layer_archive(self, output):
         """
         Returns an archive with the data of the topmost layer
         """
-        if output is None:
-            output = "/tmp/foo.tar"
         foo = popen("tar cf "+output+" -C "+self.get_topmost_layer_path()+" .").read()
         return foo==""
 
@@ -90,12 +88,18 @@ class EncryptionDriver:
         return output
 
     def sign(self, sign_key):
+        """
+        Method used to sign the input file, based on a signature (private) key.
+        """
         key = SigningKey.from_string(sign_key)
         message = file(self.__input).read()
         sig = key.sign(message)
         return b64encode(sig)
 
     def verify(self, verification_key, signature):
+        """
+        Method used to verify the input file, based on a verification (public) key and a previously provided signature.
+        """
         signature = b64decode(signature)
         key = VerifyingKey.from_string(verification_key)
         message = file(self.__input).read()

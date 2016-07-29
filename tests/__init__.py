@@ -1,3 +1,3 @@
 #!/usr/bin/python
 
-__all__ = ['test_core']
+__all__ = ['test_core', 'test_client']

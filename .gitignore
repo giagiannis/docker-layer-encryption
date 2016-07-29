@@ -2,4 +2,4 @@
 __pycache__
 build/
 idle.egg-info/
-idle/.*.swp
+.*.swp

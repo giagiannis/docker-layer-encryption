@@ -1,2 +1,2 @@
 #!/usr/bin/python
-__all__ = ['core']
+__all__ = ['core', 'client']

@@ -25,7 +25,7 @@ class IDLEClient:
         encrypted_tar = EncryptionDriver(layer_tar).encrypt(passphrase, encrypted)
         remove(layer_tar)
         signature = EncryptionDriver(encrypted_tar).sign(sign_key)
-        output = self.__create_signed_archive(encrypted, signature)
+        output = self.__create_signed_archive(encrypted, signature, outfile)
         return output
 
     def install_layer(self, archive_path, passphrase, verification_key):

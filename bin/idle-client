@@ -2,6 +2,9 @@
 
 import argparse
 from sys import argv
+from idle.client import IDLEClient
+from getpass import getpass
+from ecdsa import SigningKey,VerifyingKey
 
 class ArgumentParser:
     """
@@ -10,6 +13,17 @@ class ArgumentParser:
     BADREQUEST = -1
     def __init__(self, argv):
         self.__argv=argv
+    
+    def parse_gen_key_arguments(self):
+        """
+        Parsing arguments for key generation
+        """
+        prefix = self.__parse_safe("-p")
+        name = self.__parse_safe("-n")
+        if ArgumentParser.BADREQUEST in [prefix,name]:
+            return ArgumentParser.BADREQUEST
+        else:
+            return prefix,name
 
     def parse_encryption_arguments(self):
         """
@@ -17,32 +31,100 @@ class ArgumentParser:
         """
         outfile = self.__parse_safe("-o")
         container_id = self.__parse_safe("-c")
-        if ArgumentParser.BADREQUEST in [outfile,container_id]:
+        key_file = self.__parse_safe("-k")
+        if ArgumentParser.BADREQUEST in [outfile,container_id,key_file]:
             return ArgumentParser.BADREQUEST
         else:
-            return outfile,container_id
+            return outfile,container_id,key_file
+
+    def parse_decryption_arguments(self):
+        """
+        Parsing arguments for the decryption function
+        """
+        infile = self.__parse_safe("-i")
+        container_id = self.__parse_safe("-c")
+        key_file = self.__parse_safe("-k")
+        if ArgumentParser.BADREQUEST in [infile,container_id,key_file]:
+            return ArgumentParser.BADREQUEST
+        else:
+            return infile,container_id,key_file
+    def parse_verification_arguments(self):
+        """
+        Parsing arguments for the verification function
+        """
+        infile = self.__parse_safe("-i")
+        key_file = self.__parse_safe("-k")
+        if ArgumentParser.BADREQUEST in [infile,key_file]:
+            return ArgumentParser.BADREQUEST
+        else:
+            return infile,key_file
+
 
     def __parse_safe(self, value):
         try:
             index = self.__argv.index(value)
+            return self.__argv[index+1]
         except:
             return ArgumentParser.BADREQUEST
 
+def pad_passphrase(passphrase, size=32):
+    if(len(passphrase)>size):
+        return passphrase[0:size]
+    else:
+        return passphrase+(size-len(passphrase))*"0"
 
 if __name__ == "__main__":
     parser = ArgumentParser(argv)
-    commands = ["encrypt", "decrypt", "verify"]
+    commands = ["gen_key", "encrypt", "decrypt", "verify"]
     if (len(argv)<2):
         print("Please provide one command of: %s" % commands)
         exit(0)
-    if argv[1] == "encrypt":
+    if argv[1] == "gen_key":
+        result = parser.parse_gen_key_arguments()
+        if(result == ArgumentParser.BADREQUEST):
+            print "Please specify the path (-p) and the name (-n) of the key pair"
+            exit(0)
+        path,name = result
+        private_key = SigningKey.generate()
+        file(path+"/"+name+"_prv.pem", 'w').write(private_key.to_pem())
+        file(path+"/"+name+"_pub.pem", 'w').write(private_key.get_verifying_key().to_pem())
+    elif argv[1] == "encrypt":
         result = parser.parse_encryption_arguments()
         if(result==ArgumentParser.BADREQUEST):
-            print "Please specify the container_id (-c) and the outfile (-o)"
+            print "Please specify the container_id (-c), the outfile (-o) and the key used for signing (-k)"
             exit(1)
+        outfile = result[0]
+        container_id = result[1]
+        sign_key = SigningKey.from_pem(file(result[2]).read().rstrip()).to_string()
+        client = IDLEClient(container_id)
+        passphrase = pad_passphrase(getpass("Provide passphrase: ").rstrip())
+        passphrase_2 = pad_passphrase(getpass("Provide passphrase (again): ").rstrip())
+        if passphrase != passphrase_2:
+            print "Passphrases do not match!"
+            exit(0)
+        client.export_layer(passphrase, sign_key, outfile)
     elif argv[1] == "decrypt":
-        pass
+        result = parser.parse_decryption_arguments()
+        if(result==ArgumentParser.BADREQUEST):
+            print "Please specify the container_id (-c), the infile (-i) and the key used for verification (-k)"
+            exit(1)
+        infile = result[0]
+        container_id = result[1]
+        verification_key = VerifyingKey.from_pem(file(result[2]).read().rstrip()).to_string()
+        client = IDLEClient(container_id)
+        passphrase = pad_passphrase(getpass("Provide passphrase: ").rstrip())
+        client.install_layer(infile, passphrase, verification_key)
     elif argv[1] == "verify":
-        pass
+        result = parser.parse_verification_arguments()
+        if(result==ArgumentParser.BADREQUEST):
+            print "Please specify the infile (-i) and the key used for verification (-k)"
+            exit(1)
+        infile = result[0]
+        verification_key = VerifyingKey.from_pem(file(result[1]).read().rstrip()).to_string()
+        client = IDLEClient("xxx")
+        if client.verify_layer(infile, verification_key):
+            print "Verified"
+        else:
+            print "Cannot verify"
     else:
-        print "The first argument should be one of encrypt, decrypt, verify" 
+        print "The first argument should be one of %s" % (commands) 

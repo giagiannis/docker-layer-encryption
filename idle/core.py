@@ -114,8 +114,61 @@ class AtRestEncryptionDriver:
     """
     Class used to execute the data-at-rest encryption, using ecryptfs
     """
-    def __init__(self):
+    def __init__(self, container_id):
         """
         Default constructor
         """
-        raise NotImplemented
+        self.__container_id = container_id
+        self.__docker_driver = DockerDriver(container_id)
+
+    def setup(self, passphrase):
+        """
+        Method used to allocate, encrypt, project and mount a block device, dedicated for storing the data
+        of the topmost container layer. 
+        """
+        loop_device = self.__create_loop_device()
+        self.__luks_format_device(loop_device)
+        self.__luks_open_device(loop_device)
+
+    def status(self):
+        """
+        Checks whether the encrypted device(s) are mounted
+        """
+        pass
+    
+    def map(self, passphrase):
+        """
+        Creates the encryption/decryption mappings
+        """
+        pass
+
+    def unmap(self):
+        """
+        Destroys the encryption/decryption mappings 
+        pass
+        """
+
+    def __create_loop_device(self):
+        """
+        Function used to generate a file and project it as a loop device. 
+        Returns the absolute path of the block device.
+        """
+        pass
+
+    def __luks_format_device(self, loop_device):
+        """
+        Format the device (luksFormat+mkfs)
+        """
+        pass
+
+    def __luks_open_device(self):
+        """
+        Creates the mapping between the encrypted block device and the container layer
+        """
+        pass
+
+    def __luks_close_device(self):
+        """
+        Destroys the mapping
+        """
+        pass

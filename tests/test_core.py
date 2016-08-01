@@ -67,3 +67,25 @@ class EncryptionDriverTest(unittest.TestCase):
         signature = driver.sign(sign_key.to_string())
         verification_key = sign_key.get_verifying_key()
         assert(driver.verify(verification_key.to_string(), signature))
+
+
+class AtRestEncryptionDriverTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        pass
+
+    @classmethod
+    def tearDownClass(cls):
+        pass
+
+    def test_setup(self):
+        pass
+
+    def test_status(self):
+        pass
+
+    def test_map(self):
+        pass
+
+    def test_unmap(self):
+        pass

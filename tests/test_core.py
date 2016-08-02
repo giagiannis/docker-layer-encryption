@@ -2,10 +2,9 @@
 import unittest
 import random
 from os import system,popen
-from idle.core import DockerDriver
-from idle.core import EncryptionDriver
+from idle.core import DockerDriver, EncryptionDriver, AtRestEncryptionDriver
 from ecdsa import SigningKey, VerifyingKey
-from .utils import random_hex_string
+from .utils import random_hex_string, create_docker_container, rm_docker_container
 
 
 class DockerDriverTest(unittest.TestCase):
@@ -78,8 +77,17 @@ class AtRestEncryptionDriverTest(unittest.TestCase):
     def tearDownClass(cls):
         pass
 
+    def setUp(self):
+        self.__container_id = create_docker_container()
+        self.__driver = AtRestEncryptionDriver(self.__container_id)
+
+    def tearDown(self):
+        rm_docker_container(self.__container_id)
+
     def test_setup(self):
-        pass
+        passphrase = random_hex_string()
+        print "Passphrase used: "+passphrase
+        self.__driver.setup(passphrase)
 
     def test_status(self):
         pass

@@ -1,11 +1,12 @@
 #!/usr/bin/python
 __all__ = ['DockerDriver', 'EncryptionDriver', 'AtRestEncryptionDriver']
 
-from os import popen
+from os import popen,system
 from Crypto.Cipher import AES
 from base64 import b64encode, b64decode
 from ecdsa import SigningKey,VerifyingKey
 import random
+from time import sleep
 
 class DockerDriver:
     """
@@ -45,6 +46,8 @@ class DockerDriver:
         foo = popen("tar xf "+archive+" -C "+self.get_topmost_layer_path()).read()
         return foo==""
 
+    def get_layer_storage_path(self):
+        return self.DOCKER_INSTALLATION_PATH+self.DOCKER_STORAGE_BACKEND
 
 class EncryptionDriver:
     """
@@ -127,8 +130,21 @@ class AtRestEncryptionDriver:
         of the topmost container layer. 
         """
         loop_device = self.__create_loop_device()
-        self.__luks_format_device(loop_device)
-        self.__luks_open_device(loop_device)
+        self.__luks_format_device(passphrase)
+        self.__luks_open_device(passphrase)
+        root_fs_type = popen("df -T "+self.__docker_driver.DOCKER_INSTALLATION_PATH+"  | awk '{print $2}' | tail -n 1").read().rstrip()
+        system("mkfs."+root_fs_type+" /dev/mapper/"+self.__docker_driver.get_topmost_layer_id())
+        
+        # transfer existing data to the new storage medium
+        layer_path = self.__docker_driver.get_layer_storage_path()+"/"+self.__docker_driver.get_topmost_layer_id()
+        system("mv "+layer_path+" "+layer_path+"_old")
+        system("mkdir "+layer_path)
+        system("mount /dev/mapper/"+self.__docker_driver.get_topmost_layer_id()+" "+layer_path)
+        system("rsync -avu "+layer_path+"_old/ "+layer_path+"/")
+        system("rm -r "+layer_path+"_old")
+        
+
+#        self.__luks_open_device(loop_device)
 
     def status(self):
         """
@@ -153,22 +169,38 @@ class AtRestEncryptionDriver:
         Function used to generate a file and project it as a loop device. 
         Returns the absolute path of the block device.
         """
-        pass
-
-    def __luks_format_device(self, loop_device):
+        top_layer_path = self.__docker_driver.get_topmost_layer_path()
+        top_layer_id = self.__docker_driver.get_topmost_layer_id()
+        disk_file = self.__docker_driver.get_layer_storage_path()+"/"+ top_layer_id + ".disk"
+        popen("truncate --size 100G "+disk_file)
+        popen("kpartx -a "+disk_file)
+        
+    def __luks_format_device(self, passphrase):
         """
         Format the device (luksFormat+mkfs)
         """
-        pass
+        popen("echo -n '"+passphrase+"' | cryptsetup luksFormat "+self.__get_mapper_partition()+" -")
 
-    def __luks_open_device(self):
+    def __luks_open_device(self, passphrase):
         """
         Creates the mapping between the encrypted block device and the container layer
         """
-        pass
+        popen("echo "+passphrase+"| cryptsetup luksOpen "+self.__get_mapper_partition()+" "+self.__docker_driver.get_topmost_layer_id())
 
     def __luks_close_device(self):
         """
         Destroys the mapping
         """
         pass
+
+    def __get_mapper_device(self):
+        """
+        Returns the device, e.g., /dev/loop1 - useful for management
+        """
+        return popen("losetup | grep "+self.__docker_driver.get_topmost_layer_id()+" |awk '{print $1}'").read().rstrip()
+
+    def __get_mapper_partition(self):
+        """
+        Returns the partition, e.g., /dev/mapper/loop1p1 - useful for writing
+        """
+        return "/dev/mapper/"+self.__get_mapper_device().split("/")[2]+"p1"

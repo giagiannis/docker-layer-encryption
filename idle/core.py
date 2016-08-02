@@ -1,12 +1,13 @@
 #!/usr/bin/python
 __all__ = ['DockerDriver', 'EncryptionDriver', 'AtRestEncryptionDriver']
 
-from os import popen,system
+from os import popen,system,path
 from Crypto.Cipher import AES
 from base64 import b64encode, b64decode
 from ecdsa import SigningKey,VerifyingKey
 import random
 from time import sleep
+from enum import Enum
 
 class DockerDriver:
     """
@@ -29,11 +30,15 @@ class DockerDriver:
         layer_id = file(path).read().replace("-init","")
         return layer_id
 
-    def get_topmost_layer_path(self):
+    def get_topmost_layer_path(self, data=True):
         """
-        Returns the path of the topmost layer for the specified container
+        Returns the path of the topmost layer for the specified container. If data is set to True (default operation), the data dir is returned; If data is False, the root layer path (with metadata and util folders) is returned.
         """
-        return DockerDriver.DOCKER_INSTALLATION_PATH+DockerDriver.DOCKER_STORAGE_BACKEND+"/"+self.get_topmost_layer_id()+"/upper/"
+        if data:
+            return DockerDriver.DOCKER_INSTALLATION_PATH+DockerDriver.DOCKER_STORAGE_BACKEND+"/"+self.get_topmost_layer_id()+"/upper/"
+        else:
+            return DockerDriver.DOCKER_INSTALLATION_PATH+DockerDriver.DOCKER_STORAGE_BACKEND+"/"+self.get_topmost_layer_id()
+
 
     def create_topmost_layer_archive(self, output):
         """
@@ -46,8 +51,9 @@ class DockerDriver:
         foo = popen("tar xf "+archive+" -C "+self.get_topmost_layer_path()).read()
         return foo==""
 
-    def get_layer_storage_path(self):
-        return self.DOCKER_INSTALLATION_PATH+self.DOCKER_STORAGE_BACKEND
+    #def get_layer_storage_path(self):
+    #    return self.DOCKER_INSTALLATION_PATH+self.DOCKER_STORAGE_BACKEND
+
 
 class EncryptionDriver:
     """
@@ -117,6 +123,16 @@ class AtRestEncryptionDriver:
     """
     Class used to execute the data-at-rest encryption, using ecryptfs
     """
+
+
+    class Status(Enum):
+        """
+        Status class indicates the status of the AtRestEncryption driver
+        """
+        UNENCRYPTED = 0,
+        OFFLINE = 1,
+        ONLINE = 2
+
     def __init__(self, container_id):
         """
         Default constructor
@@ -126,55 +142,93 @@ class AtRestEncryptionDriver:
 
     def setup(self, passphrase):
         """
-        Method used to allocate, encrypt, project and mount a block device, dedicated for storing the data
-        of the topmost container layer. 
+        Method used to allocate, encrypt, project and mount a block device, dedicated for storing the data of the topmost container layer. 
         """
-        loop_device = self.__create_loop_device()
+        if self.get_status()!=AtRestEncryptionDriver.Status.UNENCRYPTED:
+            return False
+        self.__attach_loop_device(create_device=True)
+        sleep(.2)
         self.__luks_format_device(passphrase)
         self.__luks_open_device(passphrase)
         root_fs_type = popen("df -T "+self.__docker_driver.DOCKER_INSTALLATION_PATH+"  | awk '{print $2}' | tail -n 1").read().rstrip()
-        system("mkfs."+root_fs_type+" /dev/mapper/"+self.__docker_driver.get_topmost_layer_id())
+        system("mkfs."+root_fs_type+" -q /dev/mapper/"+self.__docker_driver.get_topmost_layer_id())
         
         # transfer existing data to the new storage medium
-        layer_path = self.__docker_driver.get_layer_storage_path()+"/"+self.__docker_driver.get_topmost_layer_id()
+        layer_path = self.__docker_driver.get_topmost_layer_path(data=False)
         system("mv "+layer_path+" "+layer_path+"_old")
         system("mkdir "+layer_path)
         system("mount /dev/mapper/"+self.__docker_driver.get_topmost_layer_id()+" "+layer_path)
-        system("rsync -avu "+layer_path+"_old/ "+layer_path+"/")
+        system("rsync -au "+layer_path+"_old/ "+layer_path+"/")
         system("rm -r "+layer_path+"_old")
-        
+        sleep(.2)
+        return True
 
-#        self.__luks_open_device(loop_device)
-
-    def status(self):
+    def get_status(self):
         """
         Checks whether the encrypted device(s) are mounted
         """
-        pass
+        if not path.isfile(self.__get_disk_file()):
+            return AtRestEncryptionDriver.Status.UNENCRYPTED
+        if self.__get_mapper_device()=="":
+            return AtRestEncryptionDriver.Status.OFFLINE
+        return AtRestEncryptionDriver.Status.ONLINE
     
     def map(self, passphrase):
         """
         Creates the encryption/decryption mappings
         """
-        pass
+        if self.get_status()!=AtRestEncryptionDriver.Status.OFFLINE:
+            return False
+        self.__attach_loop_device()
+        sleep(.2)
+        self.__luks_open_device(passphrase)
+        layer_path = self.__docker_driver.get_topmost_layer_path(data=False)
+        system("mount /dev/mapper/"+self.__docker_driver.get_topmost_layer_id()+" "+layer_path)
+        return True
 
+        
     def unmap(self):
         """
         Destroys the encryption/decryption mappings 
-        pass
         """
+        if self.get_status()!=AtRestEncryptionDriver.Status.ONLINE:
+            return False
+        layer_path = self.__docker_driver.get_topmost_layer_path(data=False)
+        system("umount "+layer_path)
+        self.__luks_close_device()
+        system("kpartx -d "+ self.__get_mapper_device())
+        system("losetup -D")
+        sleep(.2)
+        return True
 
-    def __create_loop_device(self):
+    def destroy_disk(self, passphrase=None):
+        """
+        Erases the encrypted disk file. If the passphrase is provided, the encrypted device is mounted one last time to transfer the data of the layer into the unencrypted directory, else the device is list without backing up the data. 
+        """
+        if self.get_status()!=AtRestEncryptionDriver.Status.OFFLINE:
+            return False
+        if passphrase is not None:
+            self.map(passphrase)
+            layer_path = self.__docker_driver.get_topmost_layer_path(data=False)
+            system("mkdir "+layer_path+"_old")
+            system("rsync -au "+layer_path+"/ "+layer_path+"_old/")
+            self.unmap()
+            system("rsync -au "+layer_path+"_old/ "+layer_path+"/")
+            system("rm -r "+layer_path+"_old")
+        system("rm "+self.__get_disk_file())
+        return True
+
+
+    # aux methods
+    def __attach_loop_device(self, create_device = False):
         """
         Function used to generate a file and project it as a loop device. 
         Returns the absolute path of the block device.
         """
-        top_layer_path = self.__docker_driver.get_topmost_layer_path()
-        top_layer_id = self.__docker_driver.get_topmost_layer_id()
-        disk_file = self.__docker_driver.get_layer_storage_path()+"/"+ top_layer_id + ".disk"
-        popen("truncate --size 100G "+disk_file)
-        popen("kpartx -a "+disk_file)
-        
+        if create_device:   # first create the device
+            popen("truncate --size 100G "+ self.__get_disk_file())
+        popen("kpartx -a "+self.__get_disk_file())
+
     def __luks_format_device(self, passphrase):
         """
         Format the device (luksFormat+mkfs)
@@ -191,7 +245,7 @@ class AtRestEncryptionDriver:
         """
         Destroys the mapping
         """
-        pass
+        popen("cryptsetup luksClose "+self.__docker_driver.get_topmost_layer_id())
 
     def __get_mapper_device(self):
         """
@@ -204,3 +258,9 @@ class AtRestEncryptionDriver:
         Returns the partition, e.g., /dev/mapper/loop1p1 - useful for writing
         """
         return "/dev/mapper/"+self.__get_mapper_device().split("/")[2]+"p1"
+
+    def __get_disk_file(self):
+        """
+        Returns the disk file path
+        """
+        return self.__docker_driver.get_topmost_layer_path(data=False)+".disk"

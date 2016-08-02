@@ -12,3 +12,11 @@ def create_docker_container():
 
 def rm_docker_container(container_id):
     popen("docker rm -f "+container_id)
+
+def start_docker_container(container_id):
+    output = popen("docker start "+ container_id+" 2>&1").read().rstrip()
+    succeeded  = (output==container_id)
+    if succeeded:
+        sink = popen("docker stop "+ container_id+" 2>&1").read().rstrip()
+    return succeeded
+

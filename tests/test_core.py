@@ -4,7 +4,8 @@ import random
 from os import system,popen
 from idle.core import DockerDriver, EncryptionDriver, AtRestEncryptionDriver
 from ecdsa import SigningKey, VerifyingKey
-from .utils import random_hex_string, create_docker_container, rm_docker_container
+from .utils import random_hex_string, create_docker_container, rm_docker_container, start_docker_container
+from time import sleep
 
 
 class DockerDriverTest(unittest.TestCase):
@@ -69,31 +70,95 @@ class EncryptionDriverTest(unittest.TestCase):
 
 
 class AtRestEncryptionDriverTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        pass
-
-    @classmethod
-    def tearDownClass(cls):
-        pass
-
     def setUp(self):
         self.__container_id = create_docker_container()
         self.__driver = AtRestEncryptionDriver(self.__container_id)
+        self.__passphrase = random_hex_string()
 
     def tearDown(self):
-        rm_docker_container(self.__container_id)
+        if self.__driver.get_status()==AtRestEncryptionDriver.Status.ONLINE:
+            self.__driver.unmap()
+        if self.__driver.get_status()==AtRestEncryptionDriver.Status.OFFLINE:
+            self.__driver.destroy_disk()
+        if self.__driver.get_status()==AtRestEncryptionDriver.Status.UNENCRYPTED:
+            rm_docker_container(self.__container_id)
+
+    def test_deterministic_scenario(self):
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.UNENCRYPTED)
+        self.__driver.setup(self.__passphrase)
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.ONLINE)
+        self.__driver.unmap()
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.OFFLINE)
+        sleep(0.5)
+        self.__driver.map(self.__passphrase)
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.ONLINE)
+        sleep(0.5)
+        self.__driver.unmap()
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.OFFLINE)
+        self.__driver.destroy_disk()
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.UNENCRYPTED)
 
     def test_setup(self):
-        passphrase = random_hex_string()
-        print "Passphrase used: "+passphrase
-        self.__driver.setup(passphrase)
-
-    def test_status(self):
-        pass
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.UNENCRYPTED)
+        succeeded = self.__driver.setup(self.__passphrase)
+        assert(succeeded)
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.ONLINE)
+        succeeded = self.__driver.setup(self.__passphrase)
+        assert(not succeeded)
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.ONLINE)
 
     def test_map(self):
-        pass
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.UNENCRYPTED)
+        succeeded = self.__driver.map(self.__passphrase)
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.UNENCRYPTED)
+        assert(not succeeded)
+
+        succeeded = self.__driver.setup(self.__passphrase)
+
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.ONLINE)
+        succeeded = self.__driver.map(self.__passphrase)
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.ONLINE)
+        assert(not succeeded)
+
+        self.__driver.unmap()
+        sleep(0.2)
+
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.OFFLINE)
+        succeeded = self.__driver.map(self.__passphrase)
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.ONLINE)
+        assert(succeeded)
+
 
     def test_unmap(self):
-        pass
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.UNENCRYPTED)
+        succeeded = self.__driver.unmap()
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.UNENCRYPTED)
+        assert(not succeeded)
+
+        succeeded = self.__driver.setup(self.__passphrase)
+
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.ONLINE)
+        succeeded = self.__driver.unmap()
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.OFFLINE)
+        assert(succeeded)
+
+        succeeded = self.__driver.unmap()
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.OFFLINE)
+        assert(not succeeded)
+
+    def test_destroy_disk_smooth(self):
+        self.__driver.setup(self.__passphrase)
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.ONLINE)
+        self.__driver.unmap()
+        self.__driver.destroy_disk(self.__passphrase)
+        succeeded = start_docker_container(self.__container_id)
+        assert(succeeded)
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.UNENCRYPTED)
+        
+        self.__driver.setup(self.__passphrase)
+        assert(self.__driver.get_status() == AtRestEncryptionDriver.Status.ONLINE)
+        self.__driver.unmap()
+        self.__driver.destroy_disk()
+        succeeded = start_docker_container(self.__container_id)
+        assert(not succeeded)
+

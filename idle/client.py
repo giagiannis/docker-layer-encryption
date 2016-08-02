@@ -2,7 +2,7 @@
 
 __all__ = ['IDLEClient']
 
-from idle.core import DockerDriver, EncryptionDriver
+from idle.core import DockerDriver, EncryptionDriver, AtRestEncryptionDriver
 import random
 from os import system,remove,popen
 
@@ -94,4 +94,21 @@ class IDLEClient:
         return signature,data_path
 
 
+class IDLEAtRestClient:
+    def __init__(self, container_id):
+        self.__driver = AtRestEncryptionDriver(container_id)
 
+    def setup(self, passphrase):
+        return self.__driver.setup(passphrase)
+
+    def map(self, passphrase):
+        return self.__driver.map(passphrase)
+
+    def unmap(self):
+        return self.__driver.unmap()
+
+    def destroy_encrypted_disk(self, passphrase = None):
+        return self.__driver.destroy_disk(passphrase)
+
+    def get_status(self):
+        return self.__driver.get_status()

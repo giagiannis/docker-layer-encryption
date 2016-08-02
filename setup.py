@@ -9,5 +9,6 @@ setup(name='idle',
       author_email='ggian@cslab.ece.ntua.gr',
       url='https://github.com/giagiannis/docker-layer-encryption',
       packages=['idle'],
-      test_suite='tests'
+      test_suite='tests',
+      setup=['bin/idle-client', 'bin/idle-at-rest-client']
      )

@@ -1,0 +1,107 @@
+#!/usr/bin/python
+
+import argparse
+from sys import argv
+from getpass import getpass
+from idle.client import IDLEAtRestClient
+
+
+class ArgumentParser:
+    """
+    Parses the arguments for the various commands
+    """
+    BADREQUEST = -1
+    def __init__(self, argv):
+        self.__argv=argv
+
+    def parse_args(self):
+        """
+        Parsing arguments for everything:
+        """
+        container_id = self.__parse_safe("-c")
+        if container_id == ArgumentParser.BADREQUEST:
+            return ArgumentParser.BADREQUEST
+        else:
+            return container_id
+    
+    def __parse_safe(self, value):
+        try:
+            index = self.__argv.index(value)
+            return self.__argv[index+1]
+        except:
+            return ArgumentParser.BADREQUEST
+
+
+def get_passphrase(double_check = False, message = "Provide passphrase"):
+    passphrase = getpass(message+": ").rstrip()
+    if double_check:
+        passphrase_2 = getpass(message +" (again): ").rstrip()
+        if passphrase != passphrase_2:
+            print "Passphrases do not match!"
+            exit(0)
+
+    return passphrase
+
+def print_exec_status(succeeded):
+    if(succeeded):
+        print("Operation completed successfully")
+    else:
+        print("Operation did not completed successfully:")
+
+if __name__ == "__main__":
+    parser = ArgumentParser(argv)
+    commands = ["setup", "status", "map", "unmap", "destroy"]
+    if (len(argv)<2):
+        print("Please provide one command of: %s" % commands)
+        exit(0)
+    if argv[1] == "setup":
+        result = parser.parse_args()
+        if(result == ArgumentParser.BADREQUEST):
+            print "Please specify the container id (-c) you refer to"
+            exit(0)
+        container_id = result
+        client = IDLEAtRestClient(container_id)
+        passphrase = get_passphrase(double_check=True)
+        succeeded = client.setup(passphrase)
+        print_exec_status(succeeded)
+    elif argv[1] == "status":
+        result = parser.parse_args()
+        if(result == ArgumentParser.BADREQUEST):
+            print "Please specify the container id (-c) you refer to"
+            exit(0)
+        container_id = result
+        client = IDLEAtRestClient(container_id)
+        print client.get_status()
+    elif argv[1] == "map":
+        result = parser.parse_args()
+        if(result == ArgumentParser.BADREQUEST):
+            print "Please specify the container id (-c) you refer to"
+            exit(0)
+        container_id = result
+        client = IDLEAtRestClient(container_id)
+        passphrase = get_passphrase()
+        succeeded = client.map(passphrase)
+        print_exec_status(succeeded)
+    elif argv[1] == "unmap":
+        result = parser.parse_args()
+        if(result == ArgumentParser.BADREQUEST):
+            print "Please specify the container id (-c) you refer to"
+            exit(0)
+        container_id = result
+        client = IDLEAtRestClient(container_id)
+        succeeded = client.unmap()
+        print_exec_status(succeeded)
+    elif argv[1] == "destroy":
+        result = parser.parse_args()
+        if(result == ArgumentParser.BADREQUEST):
+            print "Please specify the container id (-c) you refer to"
+            exit(0)
+        container_id = result
+        client = IDLEAtRestClient(container_id)
+        passphrase = get_passphrase(message="Provide passphrase for safe removal (empty line for forceful removal)")
+        if passphrase == "":
+            passphrase = None
+        succeeded = client.destroy_encrypted_disk(passphrase)
+        print_exec_status(succeeded)
+    else:
+        print "The first argument should be one of %s" % (commands) 

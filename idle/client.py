@@ -107,8 +107,8 @@ class IDLEAtRestClient:
     def unmap(self):
         return self.__driver.unmap()
 
-    def destroy_encrypted_disk(self, passphrase = None):
-        return self.__driver.destroy_disk(passphrase)
+    def deactivate_encrypted_disk(self, passphrase = None):
+        return self.__driver.deactivate_disk(passphrase)
 
     def get_status(self):
         return self.__driver.get_status()

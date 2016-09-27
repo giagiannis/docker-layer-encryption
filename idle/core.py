@@ -201,7 +201,7 @@ class AtRestEncryptionDriver:
         sleep(.2)
         return True
 
-    def destroy_disk(self, passphrase=None):
+    def deactivate_disk(self, passphrase=None):
         """
         Erases the encrypted disk file. If the passphrase is provided, the encrypted device is mounted one last time to transfer the data of the layer into the unencrypted directory, else the device is list without backing up the data. 
         """

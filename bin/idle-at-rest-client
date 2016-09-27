@@ -50,7 +50,7 @@ def print_exec_status(succeeded):
 
 if __name__ == "__main__":
     parser = ArgumentParser(argv)
-    commands = ["setup", "status", "map", "unmap", "destroy"]
+    commands = ["setup", "status", "map", "unmap", "deactivate"]
     if (len(argv)<2):
         print("Please provide one command of: %s" % commands)
         exit(0)
@@ -91,7 +91,7 @@ if __name__ == "__main__":
         client = IDLEAtRestClient(container_id)
         succeeded = client.unmap()
         print_exec_status(succeeded)
-    elif argv[1] == "destroy":
+    elif argv[1] == "deactivate":
         result = parser.parse_args()
         if(result == ArgumentParser.BADREQUEST):
             print "Please specify the container id (-c) you refer to"
@@ -101,7 +101,7 @@ if __name__ == "__main__":
         passphrase = get_passphrase(message="Provide passphrase for safe removal (empty line for forceful removal)")
         if passphrase == "":
             passphrase = None
-        succeeded = client.destroy_encrypted_disk(passphrase)
+        succeeded = client.deactivate_encrypted_disk(passphrase)
         print_exec_status(succeeded)
     else:
         print "The first argument should be one of %s" % (commands) 

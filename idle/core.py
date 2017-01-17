@@ -1,14 +1,18 @@
 #!/usr/bin/python
 __all__ = ['DockerDriver', 'EncryptionDriver', 'AtRestEncryptionDriver']
 
-from os import popen,system,path
+from os import popen,system,path,chdir,getcwd
 from Crypto.Cipher import AES
 from base64 import b64encode, b64decode
 from ecdsa import SigningKey,VerifyingKey
 import random
 from time import sleep
 from enum import Enum
-import shade
+try:
+    import shade
+    import os_client_config
+except ImportError:
+    print "Warning: Shade module not found"
 
 class DockerDriver:
     """
@@ -120,7 +124,7 @@ class EncryptionDriver:
             return False
 
 
-class BaseAtRestEncryptionDriver:
+class BaseAtRestEncryptionDriver(object):
     """
     Class used to execute the data-at-rest encryption, using ecryptfs
     """
@@ -145,48 +149,44 @@ class BaseAtRestEncryptionDriver:
         """
         if self.get_status()!=BaseAtRestEncryptionDriver.Status.UNENCRYPTED:
             return False
+        return True
 
     def get_status(self):
         """
         Checks whether the encrypted device(s) are mounted
         """
-        if not path.isfile(self.__get_disk_file()):
-            return BaseAtRestEncryptionDriver.Status.UNENCRYPTED
+        return True
 
-        if self.__get_mapper_device()=="":
-            return BaseAtRestEncryptionDriver.Status.OFFLINE
-
-        return BaseAtRestEncryptionDriver.Status.ONLINE
-    
     def map(self, passphrase):
         """
         Creates the encryption/decryption mappings
         """
-        if self.get_status()!=AtRestEncryptionDriver.Status.OFFLINE:
+        if self.get_status()!=BaseAtRestEncryptionDriver.Status.OFFLINE:
             return False
-        
+        return True
+
     def unmap(self):
         """
         Destroys the encryption/decryption mappings 
         """
-        if self.get_status()!=AtRestEncryptionDriver.Status.ONLINE:
+        if self.get_status()!=BaseAtRestEncryptionDriver.Status.ONLINE:
             return False
+        return True
 
     def deactivate_disk(self, passphrase=None):
         """
         Erases the encrypted disk file. If the passphrase is provided, the encrypted device is mounted one last time to transfer the data of the layer into the unencrypted directory, else the device is list without backing up the data. 
         """
-        if self.get_status()!=AtRestEncryptionDriver.Status.OFFLINE:
+        if self.get_status()!=BaseAtRestEncryptionDriver.Status.OFFLINE:
             return False
         if passphrase is not None:
             self.map(passphrase)
             layer_path = self.__docker_driver.get_topmost_layer_path(data=False)
-            system("mkdir "+layer_path+"_old")
-            system("rsync -au "+layer_path+"/ "+layer_path+"_old/")
+            system("mkdir %s_old" % layer_path)
+            system("rsync -au %s/ %s_old/" % (layer_path,layer_path))
             self.unmap()
-            system("rsync -au "+layer_path+"_old/ "+layer_path+"/")
-            system("rm -r "+layer_path+"_old")
-        system("rm "+self.__get_disk_file())
+            system("rsync -au %s_old/ %s/" % (layer_path, layer_path))
+            system("rm -r %s_old/" % layer_path)
         return True
 
     # aux methods
@@ -210,7 +210,7 @@ class BaseAtRestEncryptionDriver:
         Formats topmost docker layer
         """
         root_fs_type = popen("df -T %s | awk '{print $2}' | tail -n 1" % self.__docker_driver.DOCKER_INSTALLATION_PATH).read().rstrip()
-        system("mkfs.%s -q /dev/mapper/%s" % (root_fs_rtype, self.__docker_driver.get_topmost_layer_id()))
+        system("mkfs.%s -q /dev/mapper/%s" % (root_fs_type, self.__docker_driver.get_topmost_layer_id()))
 
     def _docker_transfer_old_data(self):
         """
@@ -223,11 +223,23 @@ class BaseAtRestEncryptionDriver:
         system("rsync -au %s_old/ %s/" % (layer_path, layer_path))
         system("rm -r %s_old" % layer_path)
 
-    def _get_disk_file(self):
+    def _luks_format_device(self, device, passphrase):
         """
-        Returns the disk file path
+        Format the device (luksFormat+mkfs)
         """
-        return self.__docker_driver.get_topmost_layer_path(data=False)+".disk"
+        popen("echo -n '%s' | cryptsetup luksFormat %s -" % (passphrase, device))
+
+    def _luks_open_device(self, device, passphrase):
+        """
+        Creates the mapping between the encrypted block device and the container layer
+        """
+        popen("echo %s | cryptsetup luksOpen %s %s" % (passphrase, device, self.__docker_driver.get_topmost_layer_id()))
+
+    def _luks_close_device(self):
+        """
+        Destroys the mapping
+        """
+        popen("cryptsetup luksClose %s" % self.__docker_driver.get_topmost_layer_id())
 
 
 class FileAtRestEncryptionDriver(BaseAtRestEncryptionDriver):
@@ -238,14 +250,13 @@ class FileAtRestEncryptionDriver(BaseAtRestEncryptionDriver):
         """
         Method used to allocate, encrypt, project and mount a block device, dedicated for storing the data of the topmost container layer. 
         """
-        if self.get_status()!=AtRestEncryptionDriver.Status.UNENCRYPTED:
+        if not super(FileAtRestEncryptionDriver, self).setup(passphrase):
             return False
-        super(FileAtRestEncryptionDriver, self).setup(passphrase)
         
         self.__attach_loop_device(create_device=True)
         sleep(.2)
-        self.__luks_format_device(passphrase)
-        self.__luks_open_device(passphrase)
+        self._luks_format_device(self.__get_mapper_partition(), passphrase)
+        self._luks_open_device(self.__get_mapper_partition(), passphrase)
         self._docker_format_device()
         
         # transfer existing data to the new storage medium
@@ -253,15 +264,31 @@ class FileAtRestEncryptionDriver(BaseAtRestEncryptionDriver):
         sleep(.2)
         return True
 
+    def get_status(self):
+        """
+        Checks whether the encrypted device(s) are mounted
+        """
+        if not super(FileAtRestEncryptionDriver, self).get_status():
+            return None
+
+        if not path.isfile(self._get_disk_file()):
+            return BaseAtRestEncryptionDriver.Status.UNENCRYPTED
+        
+        if self.__get_mapper_device()=="":
+            return super(FileAtRestEncryptionDriver, self).Status.OFFLINE
+
+        return super(FileAtRestEncryptionDriver, self).Status.ONLINE
+
     def map(self, passphrase):
         """
         Creates the encryption/decryption mappings
         """
-        super(FileAtRestEncryptionDriver, self).map(passphrase)
+        if not super(FileAtRestEncryptionDriver, self).map(passphrase):
+            return False
         
         self.__attach_loop_device()
         sleep(.2)
-        self.__luks_open_device(passphrase)
+        self._luks_open_device(self.__get_mapper_partition(), passphrase)
         self._docker_mount_device()
         return True
         
@@ -269,54 +296,53 @@ class FileAtRestEncryptionDriver(BaseAtRestEncryptionDriver):
         """
         Destroys the encryption/decryption mappings 
         """
-        super(FileAtRestEncryptionDriver, self).unmap(passphrase)
+        if not super(FileAtRestEncryptionDriver, self).unmap():
+            return False
         
         self._docker_umount_device()
-        self.__luks_close_device()
+        self._luks_close_device()
         self.__detach_loop_device()
         sleep(.2)
         return True
 
+    def deactivate_disk(self, passphrase=None):
+        """
+        Erases the encrypted disk file. If the passphrase is provided, the encrypted device is mounted one last time to transfer the data of the layer into the unencrypted directory, else the device is list without backing up the data. 
+        """
+        if not super(FileAtRestEncryptionDriver, self).deactivate_disk(passphrase):
+            return False
+
+        system("rm %s" % self.__get_disk_file())
+        return True
+
     # aux methods
+    def _get_disk_file(self):
+        """
+        Returns the disk file path
+        """
+        return self.__docker_driver.get_topmost_layer_path(data=False)+".disk"
+
     def __attach_loop_device(self, create_device = False):
         """
         Function used to generate a file and project it as a loop device. 
         Returns the absolute path of the block device.
         """
         if create_device:   # first create the device
-            popen("truncate --size 10G" + self.__get_disk_file())
-        popen("kpartx -a "+self.__get_disk_file())
+            popen("truncate --size 10G %s" % self.__get_disk_file())
+        popen("kpartx -a %s" % self.__get_disk_file())
 
     def __detach_loop_device(self):
         """
         Unmounts previously created loop device
         """
-        system("kpartx -d "+ self.__get_mapper_device())
+        system("kpartx -d %s" % self.__get_mapper_device())
         system("losetup -D")
-
-    def __luks_format_device(self, passphrase):
-        """
-        Format the device (luksFormat+mkfs)
-        """
-        popen("echo -n '"+passphrase+"' | cryptsetup luksFormat "+self.__get_mapper_partition()+" -")
-
-    def __luks_open_device(self, passphrase):
-        """
-        Creates the mapping between the encrypted block device and the container layer
-        """
-        popen("echo "+passphrase+"| cryptsetup luksOpen "+self.__get_mapper_partition()+" "+self.__docker_driver.get_topmost_layer_id())
-
-    def __luks_close_device(self):
-        """
-        Destroys the mapping
-        """
-        popen("cryptsetup luksClose "+self.__docker_driver.get_topmost_layer_id())
 
     def __get_mapper_device(self):
         """
         Returns the device, e.g., /dev/loop1 - useful for management
         """
-        return popen("losetup | grep "+self.__docker_driver.get_topmost_layer_id()+" |awk '{print $1}'").read().rstrip()
+        return popen("losetup | grep %s | awk '{print $1}'" % self.__docker_driver.get_topmost_layer_id()).read().rstrip()
 
     def __get_mapper_partition(self):
         """
@@ -329,27 +355,121 @@ class OpenstackAtRestEncryptionDriver(BaseAtRestEncryptionDriver):
     """
     Class used to execute the data-at-rest encryption, using ecryptfs
     """
-    def __attach_openstack_volume(self, create_device = False, size = "1G"):
+    def __init__(self, container_id):
+        script_path = path.abspath(__file__)
+        config_dir = path.dirname(path.dirname(script_path))
+        cur_dir = getcwd()
+        chdir(config_dir)
+        #cloud = os_client_config.make_shade(cloud='cslab')
+        #chdir(cur_dir)
+        self.__cloud = shade.openstack_cloud(cloud='cslab')
+        self.__srv_name = "test"
+        self.__vol_name = "testme"
+        super(OpenstackAtRestEncryptionDriver, self).__init__(container_id)
+
+    def setup(self, passphrase):
+        """
+        Method used to allocate, encrypt, project and mount a block device, dedicated for storing the data of the topmost container layer. 
+        """
+        if not super(OpenstackAtRestEncryptionDriver, self).setup(passphrase):
+            return False
+        
+        device = self.__attach_openstack_volume(create_device=True)
+        self._luks_format_device(device, passphrase)
+        self._luks_open_device(device, passphrase)
+        self._docker_format_device()
+        self._docker_transfer_old_data()
+        sleep(.2)
+        return True
+
+    def get_status(self):
+        """
+        Checks whether the encrypted device(s) are mounted
+        """
+        if not super(OpenstackAtRestEncryptionDriver, self).get_status():
+            return None
+
+        if self.__cloud.get_volume(self.__vol_name) == None:
+            return super(OpenstackAtRestEncryptionDriver, self).Status.UNENCRYPTED
+        
+        if self.__get_openstack_volume_device() == None:
+            return super(OpenstackAtRestEncryptionDriver, self).Status.OFFLINE
+
+        return super(OpenstackAtRestEncryptionDriver, self).Status.ONLINE
+
+
+    def map(self, passphrase):
+        """
+        Creates the encryption/decryption mappings
+        """
+        if not super(OpenstackAtRestEncryptionDriver, self).map(passphrase):
+            return False
+        
+        self.__attach_openstack_volume()
+        sleep(.2)
+        self._luks_open_device(self.__get_openstack_volume_device(), passphrase)
+        self._docker_mount_device()
+        return True
+        
+    def unmap(self):
+        """
+        Destroys the encryption/decryption mappings 
+        """
+        if not super(OpenstackAtRestEncryptionDriver, self).unmap():
+            return False
+        
+        self._docker_umount_device()
+        self._luks_close_device()
+        self.__detach_openstack_volume()
+        sleep(.2)
+        return True
+
+    def deactivate_disk(self, passphrase=None):
+        """
+        Erases the encrypted disk file. If the passphrase is provided, the encrypted device is mounted one last time to transfer the data of the layer into the unencrypted directory, else the device is list without backing up the data. 
+        TODO: error checking
+        """
+        if not super(OpenstackAtRestEncryptionDriver, self).deactivate_disk(passphrase):
+            return False
+        
+        c = self.__cloud
+        v = c.get_volume(self.__vol_name)
+        c.delete_volume(v.id)
+        return True
+
+    # aux methods
+    def __attach_openstack_volume(self, size = 1, create_device = False):
         """
         Creates an openstack volume and attaches it to the VM used
         TODO: error checking
         """
-        c = shade.openstack_cloud(cloud='cslab')
-        v = None
-        if create_device:
-            v = c.create_volume(size, name='testme')
-        s = c.get_server('test')
-        if v = None:
-            v = c.get_volume('testme')
-        c.attach_volume(s, v)
-        d = c.get_volume_attach_device(v, s.id)
+        c = self.__cloud
+        s = c.get_server(self.__vol_name)
+        v = c.get_volume(self.__vol_name)
+        if create_device and v == None:
+            v = c.create_volume(size, name=self.__vol_name)
+        if not v.attachments:
+            c.attach_volume(s, v)
+            """ Need to get volume again to succesfully get the device name later """
+            v = c.get_volume(self.__vol_name)
+        return c.get_volume_attach_device(v, s.id)
+    
+    def __detach_openstack_volume(self):
+        """
+        Unmounts previously created openstack volume device
+        TODO: error checking
+        """
+        c = self.__cloud
+        s = c.get_server(self.__srv_name)
+        v = c.get_volume(self.__vol_name)
+        c.detach_volume(s, v)
 
     def __get_openstack_volume_device(self):
         """
         Returns the device name an openstack volume is attached to
         TODO: error checking
         """
-        c = shade.openstack_cloud(cloud='cslab')
-        s = c.get_server('test')
-        v = c.get_volume('testme')
+        c = self.__cloud
+        s = c.get_server(self.__srv_name)
+        v = c.get_volume(self.__vol_name)
         return c.get_volume_attach_device(v, s.id)

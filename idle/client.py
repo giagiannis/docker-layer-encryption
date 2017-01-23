@@ -2,9 +2,10 @@
 
 __all__ = ['IDLEClient']
 
-from idle.core import DockerDriver, EncryptionDriver, AtRestEncryptionDriver
+from idle.core import DockerDriver, EncryptionDriver, BaseAtRestEncryptionDriver, FileAtRestEncryptionDriver, OpenstackAtRestEncryptionDriver
 import random
-from os import system,remove,popen
+from os import system,remove,popen,path
+import yaml
 
 class IDLEClient:
     """
@@ -96,7 +97,18 @@ class IDLEClient:
 
 class IDLEAtRestClient:
     def __init__(self, container_id):
-        self.__driver = AtRestEncryptionDriver(container_id)
+        """
+        TODO: error checking
+        """
+        script_path = path.abspath(__file__)
+        config_dir = path.dirname(path.dirname(script_path))
+        with open("%s/config.yml" % config_dir, 'r') as o:
+            f = o.read()
+        config = yaml.safe_load(f)
+        if config['main']['driver'] == "openstack":
+            self.__driver = OpenstackAtRestEncryptionDriver(container_id, config['openstack'])
+        elif config['main']['driver'] == "file":
+            self.__driver = FileAtRestEncryptionDriver(container_id)
 
     def setup(self, passphrase):
         return self.__driver.setup(passphrase)

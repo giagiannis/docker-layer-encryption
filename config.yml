@@ -1,0 +1,11 @@
+main:
+    # valid driver options: "openstack", "file"
+    driver: "openstack"
+
+openstack:
+    # path to dir where "clouds.yml" is located
+    config_dir: "."
+    # the instance name of the VM this script is run on
+    server_name: "default_server"
+    # the desired name used for creating the volume used for encryption
+    volume_name: "default"

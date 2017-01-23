@@ -1,0 +1,8 @@
+clouds:
+    cslab:
+        auth:
+            username: <my_username>
+            password: <my_password>
+            auth_url: 'http://<host>:<port>/v2.0'
+            project_name: <my_project_name>
+        region_name: <my_region_name>

@@ -1,5 +1,5 @@
 #!/usr/bin/python
-__all__ = ['DockerDriver', 'EncryptionDriver', 'AtRestEncryptionDriver']
+__all__ = ['DockerDriver', 'EncryptionDriver', 'BaseAtRestEncryptionDriver', 'FileAtRestEncryptionDriver', 'OpenstackAtRestEncryptionDriver']
 
 from os import popen,system,path,chdir,getcwd
 from Crypto.Cipher import AES
@@ -10,7 +10,6 @@ from time import sleep
 from enum import Enum
 try:
     import shade
-    import os_client_config
 except ImportError:
     print "Warning: Shade module not found"
 
@@ -355,16 +354,12 @@ class OpenstackAtRestEncryptionDriver(BaseAtRestEncryptionDriver):
     """
     Class used to execute the data-at-rest encryption, using ecryptfs
     """
-    def __init__(self, container_id):
-        script_path = path.abspath(__file__)
-        config_dir = path.dirname(path.dirname(script_path))
-        cur_dir = getcwd()
-        chdir(config_dir)
-        #cloud = os_client_config.make_shade(cloud='cslab')
-        #chdir(cur_dir)
+    def __init__(self, container_id, cloud_config):
+        clouds_dir = path.abspath(cloud_config['config_dir']) 
+        chdir(clouds_dir)
         self.__cloud = shade.openstack_cloud(cloud='cslab')
-        self.__srv_name = "test"
-        self.__vol_name = "testme"
+        self.__srv_name = cloud_config['server_name']
+        self.__vol_name = cloud_config['volume_name']
         super(OpenstackAtRestEncryptionDriver, self).__init__(container_id)
 
     def setup(self, passphrase):
@@ -444,7 +439,7 @@ class OpenstackAtRestEncryptionDriver(BaseAtRestEncryptionDriver):
         TODO: error checking
         """
         c = self.__cloud
-        s = c.get_server(self.__vol_name)
+        s = c.get_server(self.__srv_name)
         v = c.get_volume(self.__vol_name)
         if create_device and v == None:
             v = c.create_volume(size, name=self.__vol_name)

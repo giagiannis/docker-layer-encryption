@@ -193,7 +193,7 @@ class BaseAtRestEncryptionDriver(object):
         """
         Mounts topmost docker layer
         """
-        layer_id = self.__docker_driver.get_topmost_layer_id(data=False)
+        layer_id = self.__docker_driver.get_topmost_layer_id()
         layer_path = self.__docker_driver.get_topmost_layer_path(data=False)
         system("mount /dev/mapper/%s %s" % (layer_id, layer_path))
     

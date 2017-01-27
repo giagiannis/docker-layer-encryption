@@ -179,11 +179,13 @@ class BaseAtRestEncryptionDriver(object):
         if self.get_status()!=BaseAtRestEncryptionDriver.Status.OFFLINE:
             return False
         if passphrase is not None:
-            self.map(passphrase)
+            if not self.map(passphrase):
+                return False
             layer_path = self.__docker_driver.get_topmost_layer_path(data=False)
             system("mkdir %s_old" % layer_path)
             system("rsync -au %s/ %s_old/" % (layer_path,layer_path))
-            self.unmap()
+            if not self.unmap():
+                return False
             system("rsync -au %s_old/ %s/" % (layer_path, layer_path))
             system("rm -r %s_old/" % layer_path)
         return True

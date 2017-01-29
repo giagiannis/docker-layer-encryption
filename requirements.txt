@@ -1,3 +1,5 @@
 setuptools
 ecdsa
 pycrypto
+shade
+pyyaml

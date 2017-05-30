@@ -2,5 +2,5 @@ setuptools
 ecdsa
 pycrypto
 enum
-shade
+shade==1.14.1
 pyyaml
